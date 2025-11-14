@@ -1,0 +1,76 @@
+###--------------------------------------------------------------
+# Analysis of parental mortality across generations
+###--------------------------------------------------------------
+
+# Set working directory
+setwd("C:/Users/dyuti/Downloads")
+
+# Load packages
+library(readxl)
+library(ggplot2)
+library(dplyr)
+library(car)
+library(emmeans)
+
+###--------------------------------------------------------------
+
+# Read in data
+data0 <- read_excel("P0_MORTALITY.xlsx")
+data0 <- data0[!is.na(data0$Dead),]
+data1 <- read_excel("F1_MORTALITY.xlsx")
+data1 <- data1[!is.na(data1$Dead),]
+data2 <- read_excel("F2_MORTALITY.xlsx")
+data2 <- data2[!is.na(data2$Dead),]
+
+data <- rbind(data0, data1, data2)
+
+data$Sex[data$Sex=="F"] <- "Female"
+data$Sex[data$Sex=="M"] <- "Male"
+
+# Change dead counts into a percentage for plots
+percentages <- data %>% 
+  group_by(Condition, Sex, Generation) %>%
+  summarise(
+    "Replicates" = n(),
+    "Num_Dead" = sum(Dead == 1),
+    "Percentage_Dead" = 100*(Num_Dead / Replicates))
+
+
+# Change order of X-axis
+percentages$Condition <- factor(percentages$Condition, 
+                                     levels=c("Control", "Glyphosate"))
+percentages$Generation <- factor(percentages$Generation, 
+                                levels=c("P0", "F1", "F2"))
+
+# Add extra lines to make it nice
+ggplot(percentages, aes(x = Condition, y = Percentage_Dead, fill = Generation))+
+  geom_bar(stat="identity", position="dodge")+
+  facet_grid(~ Sex)+
+  ylab("Mortality (%)")+
+  theme_bw()+
+  scale_fill_manual(breaks=c("P0", "F1", "F2"),
+                    values=c("dodgerblue4","skyblue2","lightblue2"))+
+  geom_text(aes(label = Replicates), 
+            position = position_dodge(width = 0.9), vjust = -0.25)
+
+
+# Run the stats:
+data$Condition <- as.factor(data$Condition)
+data$Sex <- as.factor(data$Sex)
+data$Generation <- as.factor(data$Generation)
+
+# General linear model with binomial data
+m =glm(Dead ~ Condition*Sex*Generation, data= data, family=binomial)
+# See if there is anything significant going on
+Anova(m, type=3)
+
+# Only run this one if there is no significant interaction
+m =glm(Dead ~ Condition+Sex+Generation, data= data, family=binomial)
+# See if there is anything significant going on
+Anova(m, type=3)
+
+# Do a post-hoc test to see what is significant for generation
+EMM1 <- emmeans(m, ~ Generation*Condition*Sex, adjust="tukey", mode="linear.predictor", type="Score")
+pairs(EMM1)
+
+# P0 is different to F1 and F2
