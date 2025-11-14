@@ -1,0 +1,102 @@
+###--------------------------------------------------------------
+# Analysis of Acute Toxicity Experiments
+###--------------------------------------------------------------
+
+# Set working directory
+setwd("C:/Users/dyuti/Downloads")
+# Load packages
+library(readxl)
+library(ggplot2)
+library(dplyr)
+library(car)
+library(emmeans)
+
+###--------------------------------------------------------------
+
+# Read in data
+acute_dummy_data <- read_excel("Acute_Exposure_4nonyphenol.xlsx")
+
+# Change dead counts into a percentage for plots
+percentages <- acute_dummy_data %>% 
+  group_by(Condition, Sex) %>%
+  summarise(
+    "Replicates" = n(),
+    "Num_Dead" = sum(Dead == 1),
+    "Percentage_Dead" = 100*(Num_Dead / Replicates))
+
+
+# Read in data
+acute_dummy_data <- read_excel("4nonyphenol_acute.xlsx")
+# Run the stats:
+
+# General linear model with binomial data
+m =glm(Dead ~ Condition*Line*Sex, data= acute_dummy_data, family=binomial)
+# See if there is anything significant going on
+Anova(m, type=3)
+
+# Only run this one if there is no significant interaction
+m =glm(Dead ~ Condition+Line+Sex, data= acute_dummy_data, family=binomial)
+# See if there is anything significant going on
+Anova(m, type=3)
+
+# Do a Tukey post-hoc test to see what is significant
+summary(emmeans(m, pairwise ~ Condition*Line*Sex, adjust="tukey", mode="linear.predictor", type="Score"))
+
+# Check the structure of your data
+str(acute_dummy_data)
+
+
+# Set working directory
+setwd("C:/Users/dyuti/Downloads")
+# Load required packages
+library(readxl)
+library(ggplot2)
+library(dplyr)
+library(car)
+library(emmeans)
+
+# ---------------------------------------------------------------
+# Step 1: Read data
+data <- read_excel("Acute_Exposure_4nonyphenol.xlsx")
+
+# Step 2: Standardize Sex labels
+data$Sex <- tolower(data$Sex)  # "Male" -> "male"
+data$Sex <- dplyr::recode(data$Sex, "female" = "F", "male" = "M")
+
+# Ensure factors
+data$Sex <- as.factor(data$Sex)
+data$Condition <- as.factor(data$Condition)
+data$Line <- as.factor(data$Line)
+
+# ---------------------------------------------------------------
+# Step 3: Calculate mortality percentage per group
+percentages <- data %>%
+  group_by(Condition, Sex, Line) %>%
+  summarise(
+    Replicates = n(),
+    Num_Dead = sum(Dead == 1),
+    Percentage_Dead = 100 * (Num_Dead / Replicates),
+    .groups = "drop"
+  )
+
+# ---------------------------------------------------------------
+# Step 4: Plot mortality % by Condition, Sex, and Line
+ggplot(percentages, aes(x = Condition, y = Percentage_Dead, fill = Sex)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  facet_wrap(~ Line) +
+  labs(
+    title = "Mortality of Nasonia by 4nonyphenol Exposure",
+    x = "4nonyphenol Concentration",
+    y = "Mortality (%)",
+    fill = "Sex"
+  ) +
+  theme_bw() +
+  scale_fill_manual(values = c("F" = "blue", "M" = "red")) +
+  theme(axis.text.x = element_text(angle = 70, hjust = 1))
+  
+  
+
+###--------------------------------------------------------------
+# ADVANCED (i.e. PhD students):
+# Try to make a dose response curve:
+# e.g. https://stackoverflow.com/questions/36780357/plotting-dose-response-curves-with-ggplot2-and-drc
