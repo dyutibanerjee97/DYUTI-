@@ -1,0 +1,93 @@
+# ---------------------------------------------------
+# Nasonia size analysis
+# ---------------------------------------------------
+
+# Set working directory
+setwd("C:/Users/dyuti/Downloads")
+
+# Load packages
+library(readr)
+library(car)
+library(lsmeans)
+library(lme4)
+library(lmerTest)
+library(ggplot2)
+library(fitdistrplus)
+library(readxl)
+library(pscl)
+library(multcomp)
+library(emmeans)
+library(nnet)
+library(dplyr)
+library(ggpubr)
+
+# Read in data
+data <- read_excel("SIZE_CHRONIC_OFFSPRING.xlsx")
+
+
+
+# Change data to the correct "type"
+data$Condition <- as.factor(data$Condition)
+data$Line <- as.factor(data$Line)
+data$Sex <- as.factor(data$Sex)
+data$`Size of abdomen_mm` <- as.numeric(data$`Size of abdomen_mm`)
+
+# What's the distribution of the data?
+hist(data$`Size of abdomen_mm`)
+qqPlot(data$`Size of abdomen_mm`)
+# Looks like a normal distribution
+
+# Test the normality formally
+m = lm(`Size of abdomen_mm` ~ Condition*Sex*Line, data=data)
+anova(m)
+shapiro.test(residuals(m)) 
+# p-value <0.05 so data is significantly different from normal
+# slight skew I guess
+
+# If it's not normal, what is the distribution? 
+descdist(data$`Size of abdomen_mm`, discrete = FALSE)
+# Looks close to normal or maybe gamma
+
+# Compare both
+look <- fitdist(data$`Size of abdomen_mm`, "gamma")
+plot(look)
+look <- fitdist(data$`Size of abdomen_mm`, "norm")
+plot(look)
+# Normal actually looks better so let's just go with it
+
+# Check for an interaction between group and sex
+fit = lm(`Size of abdomen_mm` ~ Condition*Sex*Line, data=data)
+anova(fit)
+
+# Do a Tukey post-hoc test to see what is significant
+# Condition only
+EMM1 <- emmeans(m, ~ Condition*Line*Sex, adjust="tukey", mode="linear.predictor", type="Score")
+pairs(EMM1)
+# Line only
+EMM2 <- emmeans(m, ~ Line, adjust="tukey", mode="linear.predictor", type="Score")
+pairs(EMM2)
+
+# Interaction
+EMM <- emmeans(fit, ~ Condition*Line*Sex, adjust="tukey", mode="linear.predictor", type="Score")
+pairs(EMM, simple = "Condition")
+
+# Subset data to only analyse the one you want (choose one of the lines of code below)
+
+# Keep only control and 4-Nonyl and Ethanol
+
+data <- data[(data$Condition=="Control" | data$Condition =="4-Nonyl" | data$Condition =="Ethanol"),]
+
+# Sex and Group are significant - let's make a plot to eyeball
+ggplot (data, aes(x= Condition, y=`Size of abdomen_mm`, fill=Line))+
+  facet_wrap(~Sex)+
+  geom_boxplot(outlier.colour = "red")+
+  geom_jitter(color="black", size=0.8, alpha=0.9)+
+  xlab("Condition")+
+  ylab("Size of abdomen (mm)")+
+  theme_bw()+
+  scale_fill_manual(breaks=c("AsymCx", "line12", "line50"),
+                    labels=c("AsymCx", "Line 12", "Line 50"),
+                    values=c("deeppink1","royalblue1","seagreen3"))+
+  scale_x_discrete(breaks=c("Control","Ethanol","4-Nonyl"),
+                   limits=c("Control","Ethanol","4-Nonyl"),
+                   labels=c("Control","Ethanol","4-Nonyl"))
