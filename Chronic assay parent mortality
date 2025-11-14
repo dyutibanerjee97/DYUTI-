@@ -1,0 +1,132 @@
+# Assuming `long_data` is prepared as before 
+
+# Set working directory
+setwd("C:/Users/dyuti/Downloads")
+
+library(dplyr) 
+
+library(tidyr) 
+
+library(ggplot2) 
+
+library(car) 
+
+library(emmeans) 
+
+library(multcomp) 
+
+
+
+# Read data 
+
+data <- readxl::read_excel("Chronic_Exposure_parents_total.xlsx") 
+
+
+
+# Each replicate has 1 male + 1 female, create a row per individual: 
+
+# Create two rows per replicate: one male, one female 
+
+
+
+long_data <- data %>% 
+  
+  rowwise() %>% 
+  
+  do({ 
+    
+    rep_row <- . 
+    
+    tibble( 
+      
+      Condition = rep_row$Condition, 
+      
+      Replicate = rep_row$Replicate, 
+      
+      Line = rep_row$Line, 
+      
+      Sex = c("Male", "Female"), 
+      
+      Dead = c( 
+        
+        # Dead status per sex based on available data 
+        
+        # If Dead = 2, both died; if Dead = 1, the sex in Sex_died_first died; else none died. 
+        
+        ifelse(rep_row$Dead == 2, 1, 
+               
+               ifelse(rep_row$Dead == 1 & rep_row$Sex_died_first == "Male", 1, 0)), 
+        
+        ifelse(rep_row$Dead == 2, 1, 
+               
+               ifelse(rep_row$Dead == 1 & rep_row$Sex_died_first == "Female", 1, 0)) 
+        
+      ) 
+      
+    ) 
+    
+  }) %>% 
+  
+  ungroup() 
+
+
+
+# Check your data structure 
+
+head(long_data) 
+
+
+
+
+
+# Calculate mortality rate per group for plotting 
+
+mortality_summary <- long_data %>% 
+  
+  group_by(Condition, Line, Sex) %>% 
+  
+  summarise( 
+    
+    mortality_rate = mean(Dead), 
+    
+    n = n() 
+    
+  ) 
+
+# Set desired order for Condition
+mortality_summary$Condition <- factor(
+  mortality_summary$Condition,
+  levels = c("Control", "Control_Ethanol", "Glyphosate_5mg/l", "4nonylphenol_150µg/l")
+)
+
+
+# Bar plot with error bars 
+
+ggplot(mortality_summary, aes(x=Condition, y=mortality_rate, fill=Sex)) + 
+  
+  geom_bar(stat="identity", position=position_dodge()) + 
+  
+  facet_wrap(~Line) + 
+  
+  ylab("Mortality(%)") + 
+  
+  theme_bw() + 
+  
+  scale_fill_manual(values=c("Male"="red", "Female"="blue")) + 
+  
+  theme(axis.text.x = element_text(angle=60, hjust=1)) 
+
+# General linear model with binomial data
+m =glm(Dead ~ Condition*Line*Sex, data= long_data, family=binomial)
+# See if there is anything significant going on
+Anova(m, type=3)
+
+# Only run this one if there is no significant interaction
+m =glm(Dead ~ Condition+Line+Sex, data= long_data, family=binomial)
+# See if there is anything significant going on
+Anova(m, type=3)
+
+# Do a Tukey post-hoc test to see what is significant
+summary(emmeans(m, pairwise ~ Condition*Line*Sex, adjust="tukey", mode="linear.predictor", type="Score"))
+
+
