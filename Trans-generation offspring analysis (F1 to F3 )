@@ -1,0 +1,255 @@
+# ---------------------------------------------------
+# Chronic study: PO offspring analysis
+# ---------------------------------------------------
+
+# Set working directory
+setwd("C:/Users/dyuti/Downloads")
+
+# Load packages
+library(readr)
+library(car)
+library(lsmeans)
+library(lme4)
+library(lmerTest)
+library(ggplot2)
+library(fitdistrplus)
+library(readxl)
+library(pscl)
+library(multcomp)
+library(emmeans)
+library(nnet)
+library(dplyr)
+library(ggpubr)
+
+# Read in data
+data <- read_excel("TRANS_ALL_EMERGENCE.xlsx")
+
+# Change data to the correct "type"
+data$Condition <- as.factor(data$Condition)
+data$Replicate <- as.factor(data$Replicate)
+data$Male <- as.numeric(data$Male)
+data$Female <- as.numeric(data$Female)
+data$Fecundity <- as.numeric(data$Fecundity)
+data$Day_emergence <- as.factor(data$Day_emergence)
+data$Paracitized <- as.factor(data$Paracitized)
+data$Generation <- as.factor(data$Generation)
+
+# ---------------------------------------------------
+# ---- Sex-ratio analysis
+# ---------------------------------------------------
+
+# General linear model with binomial distribution
+fit = glm(cbind(Male, Female) ~ Condition*Generation,
+           family = binomial(link=logit), data=data)
+Anova(fit, type=3)
+
+# If interaction not significant
+fit = glm(cbind(Male, Female) ~ Condition+Generation,
+          family = binomial(link=logit), data=data)
+Anova(fit, type=3)
+
+# Do a Tukey post-hoc test to see what is significant
+EMM <- emmeans(fit, ~ Condition*Generation, adjust="tukey", mode="linear.predictor", type="Score")
+pairs(EMM, simple = "Condition")
+pairs(EMM, simple = "Generation")
+
+# Graph
+data$prop_female <- data$Female / data$Fecundity
+
+ggplot(data, aes(x=Condition, y=prop_female, fill=Condition))+
+  facet_grid(~Generation)+
+  geom_boxplot(outlier.colour = "red")+
+  geom_jitter(color="black", size=0.8, alpha=0.9)+
+  xlab("Condition")+
+  ylab("Proportion of Female Offspring")+
+  theme_bw()
+
+# ---------------------------------------------------
+# ---- Fecundity analysis
+# ---------------------------------------------------
+
+# What's the distribution of the data?
+hist(data$Fecundity)
+qqPlot(data$Fecundity)
+
+# Linear model
+fit = lm(Fecundity ~ Condition*Generation, data=data)
+Anova(fit, type=3)
+
+# Do a Tukey post-hoc test to see what is significant
+EMM <- emmeans(fit, ~ Condition*Generation, adjust="tukey", mode="linear.predictor", type="Score")
+pairs(EMM, simple = "Condition")
+pairs(EMM, simple = "Generation")
+
+
+# Graph
+ggplot(data, aes(x=Condition, y=Fecundity, fill=Condition))+
+  facet_grid(~Generation)+
+  geom_boxplot(outlier.colour = "red")+
+  geom_jitter(color="black", size=0.8, alpha=0.9)+
+  xlab("Condition")+
+  ylab("Total Offspring")+
+  theme_bw()
+
+# ---------------------------------------------------
+# ---- Day of emergence analysis
+# ---------------------------------------------------
+
+# Remove NAs
+data_em <- data[complete.cases(data),]
+
+# Keep only relevant rows
+data_em <- data_em[,c(1,2,9,10)]
+
+# Go from long to wide
+library(tidyr)
+binomial_emerged <- data_em %>% 
+  mutate(value = 1) %>%
+  pivot_wider(names_from = "Day_emergence", values_from = value, values_fill = 0)
+
+# Run a binomial per day
+fit_11 = glm(`11` ~ Condition*Generation,
+             family = binomial(link=logit), data=binomial_emerged)
+a=Anova(fit_11, type=3)
+# Do a Tukey post-hoc test to see what is significant
+EMM <- emmeans(fit, ~ Condition, adjust="tukey", mode="linear.predictor", type="Score")
+pairs(EMM)
+
+# Run a binomial per day
+fit_12 = glm(`12` ~ Condition*Generation,
+             family = binomial(link=logit), data=binomial_emerged)
+b=Anova(fit_12, type=3)
+# Do a Tukey post-hoc test to see what is significant
+EMM <- emmeans(fit, ~ Condition, adjust="tukey", mode="linear.predictor", type="Score")
+pairs(EMM)
+
+# Run a binomial per day
+fit_13 = glm(`13` ~ Condition*Generation,
+             family = binomial(link=logit), data=binomial_emerged)
+c=Anova(fit_13, type=3)
+# Do a Tukey post-hoc test to see what is significant
+EMM <- emmeans(fit, ~ Condition, adjust="tukey", mode="linear.predictor", type="Score")
+pairs(EMM)
+
+# Run a binomial per day
+fit_14 = glm(`14` ~ Condition*Generation,
+             family = binomial(link=logit), data=binomial_emerged)
+d=Anova(fit_14, type=3)
+# Do a Tukey post-hoc test to see what is significant
+EMM <- emmeans(fit, ~ Condition, adjust="tukey", mode="linear.predictor", type="Score")
+pairs(EMM)
+
+# Do a Tukey post-hoc test to see what is significant
+EMM <- emmeans(fit, ~ Condition, adjust="tukey", mode="linear.predictor", type="Score")
+pairs(EMM)
+
+p.adjust(c(a$`Pr(>Chisq)`, b$`Pr(>Chisq)`, c$`Pr(>Chisq)`, method="holm")
+# 0.05575096
+
+# Graph - proportion
+ggplot(data_em, aes(x=Condition,  fill=Day_emergence))+
+  facet_grid(~Generation)+
+  geom_bar(position = "fill")+
+  xlab("Condition")+
+  ylab("Count")+
+  theme_bw()
+
+# ---------------------------------------------------
+# ---- Parasitization analysis
+# ---------------------------------------------------
+# General linear model with binomial distribution
+fit = glm(Paracitized ~ Condition*Generation,
+          family = binomial(link=logit), data=data)
+Anova(fit, type=3)
+# Make percentages
+percentage_para <- data %>% 
+  group_by(Condition, Generation) %>%
+  summarise(
+    "Replicates" = n(),
+    "Num_Para" = sum(Paracitized == 1),
+    "Percentage_Para" = 100*(Num_Para / Replicates))
+# Graph
+ggplot(percentage_para, aes(x = Condition, y = Percentage_Para, fill = Condition))+
+  facet_grid(~Generation)+
+  geom_bar(stat="identity", position="dodge")+
+  ylab("Parasitized (%)")+
+  theme_bw()
+# ---------------------------------------------------
+# ---- Emergence analysis
+# ---------------------------------------------------
+
+# General linear model with binomial distribution
+emerged <- data[complete.cases(data$Emerged),]
+fit = glm(Emerged ~ Condition*Generation,
+          family = binomial(link=logit), data=emerged)
+Anova(fit, type=3)
+
+# Make percentages
+percentage_emr <- emerged %>% 
+  group_by(Condition, Generation) %>%
+  summarise(
+    "Replicates" = n(),
+    "Num_Emr" = sum(Emerged == 1),
+    "Percentage_Emr" = 100*(Num_Emr / Replicates))
+
+# Graph
+ggplot(percentage_emr, aes(x = Condition, y = Percentage_Emr, fill = Condition))+
+  facet_grid(~Generation)+
+  geom_bar(stat="identity", position="dodge")+
+  ylab("Emerged (%)")+
+  theme_bw()
+
+
+# ---------------------------------------------------
+# Put figures together
+a <- ggplot(data, aes(x=Condition, y=prop_female, fill=Condition))+
+  facet_grid(~Generation)+
+  geom_boxplot(outlier.colour = "red")+
+  geom_jitter(color="black", size=0.8, alpha=0.9)+
+  xlab("Condition")+
+  ylab("Proportion of Female Offspring")+
+  theme_bw()+
+  scale_fill_manual(breaks=c("Control", "DMSO", "Semaglutide"),
+                    values=c("gray35","gray","seagreen3"))+
+  theme(legend.position="none")
+
+b <- ggplot(data, aes(x=Condition, y=Fecundity, fill=Condition))+
+  facet_grid(~Generation)+
+  geom_boxplot(outlier.colour = "red")+
+  geom_jitter(color="black", size=0.8, alpha=0.9)+
+  xlab("Condition")+
+  ylab("Total Offspring")+
+  theme_bw()+
+  scale_fill_manual(breaks=c("Control", "DMSO", "Semaglutide"),
+                    values=c("gray35","gray","seagreen3"))+
+  theme(legend.position="none")
+
+c<- ggplot(percentage_para, aes(x = Condition, y = Percentage_Para, fill = Condition))+
+  facet_grid(~Generation)+
+  geom_bar(stat="identity", position="dodge")+
+  ylab("Parasitized (%)")+
+  theme_bw()+
+  scale_fill_manual(breaks=c("Control", "DMSO", "Semaglutide"),
+                    values=c("gray35","gray","seagreen3"))+
+  theme(legend.position="none")
+
+
+d <- ggplot(percentage_emr, aes(x = Condition, y = Percentage_Emr, fill = Condition))+
+  facet_grid(~Generation)+
+  geom_bar(stat="identity", position="dodge")+
+  ylab("Emerged (%)")+
+  theme_bw()+
+  scale_fill_manual(breaks=c("Control", "DMSO", "Semaglutide"),
+                    values=c("gray35","gray","seagreen3"))+
+  theme(legend.position="none")
+
+ggplot(data_em, aes(x=Condition,  fill=Day_emergence))+
+  facet_grid(~Generation)+
+  geom_bar(position = "fill")+
+  xlab("Condition")+
+  ylab("Count")+
+  theme_bw()+
+  scale_fill_discrete(name = "Day of Emergence")
+
+
+ggarrange(a, b, c, d, labels = c("A", "B", "C", "D"))
