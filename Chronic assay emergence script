@@ -1,0 +1,245 @@
+# ---------------------------------------------------
+# Chronic study: phenotypic data analysis
+# ---------------------------------------------------
+
+# Set working directory
+setwd("C:/Users/dyuti/Downloads")
+
+# Load packages
+library(readr)
+library(car)
+library(lsmeans)
+library(lme4)
+library(lmerTest)
+library(ggplot2)
+library(fitdistrplus)
+library(readxl)
+library(pscl)
+library(multcomp)
+library(emmeans)
+library(tidyr)
+
+# Read in data
+data <- read_excel("Nasonia_Offspring_Emergence_FINAL.xlsx")
+
+# Change data to the correct "type"
+data$Condition <- as.factor(data$Condition)
+data$Line <- as.factor(data$Line)
+data$Replicate <- as.factor(data$Replicate)
+data$Total_Male <- as.numeric(data$Total_Male)
+data$Total_Female <- as.numeric(data$Total_Female)
+data$Total_Offspring <- as.numeric(data$Total_Offspring)
+data$Day_First_Emergence<- as.factor(data$Day_First_Emergence)
+
+
+# ---------------------------------------------------
+# ---- Sex-ratio analysis
+# ---------------------------------------------------
+
+# Generalized linear model with a binomial distribution
+# It tests if there is a significant difference in the proportion of males
+# to males depending on the group
+fit = glm(cbind(Total_Male, Total_Female) ~ Condition*Line,
+          family = binomial(link=logit), data=data)
+Anova(fit, type=3)
+
+# Do a Tukey post-hoc test to see what is significant:
+# For the interaction
+EMM <- emmeans(fit, ~ Condition*Line, adjust="tukey", mode="linear.predictor", type="Score")
+pairs(EMM, simple = "Condition")
+pairs(EMM, simple = "Line")
+
+# Plot the proportion of females
+data$prop_female <- data$Total_Female / data$Total_Offspring
+
+ggplot(data, aes(x=Condition, y=prop_female, fill=Line))+
+  geom_boxplot(outlier.colour = "red")+
+  geom_jitter(color="black", size=0.8, alpha=0.9)+
+  xlab("Condition")+
+  ylab("Proportion of Female Offspring")+
+  theme_bw()+
+  scale_fill_manual(breaks=c("AsymCx","line12","line50"),
+                    labels=c("AsymCx", "Line 12", "Line 50"),
+                    values=c("deeppink1","royalblue1","seagreen3"))+
+  scale_x_discrete(breaks=c("Control","Ethanol","Glyphosate","4nonyphenol"),
+                   limits=c("Control","Ethanol","Glyphosate","4nonyphenol"),
+                   labels=c("Control", "Ethanol", "Glyphosate", "4-Nonylphenol"))
+
+# ---------------------------------------------------
+# ---- Fecundity analysis
+# ---------------------------------------------------
+
+# Remove NAs
+data_fecundity <- data[complete.cases(data),]
+
+# What's the distribution of the data?
+hist(data_fecundity$Total_Offspring)
+qqPlot(data_fecundity$Total_Offspring) # Not normal
+
+# Test the normality formally
+m = lm(Total_Offspring ~ Condition*Line , data=data_fecundity)
+anova(m)
+shapiro.test(residuals(m)) 
+# p-value <0.05 so data is significantly different from normal
+
+# If it's not normal, what is the distribution? 
+descdist(data_fecundity$Total_Offspring, discrete = FALSE)
+# Don't know... it's not uniform
+
+# Compare all the different data types... logis is close but norm seems best
+look <- fitdist(data_fecundity$Total_Offspring, "logis")
+plot(look)
+look <- fitdist(data_fecundity$Total_Offspring, "norm")
+plot(look)
+
+# Linear model, interaction not significant
+m = lm(Total_Offspring ~ Condition*Line , data=data_fecundity)
+anova(m)
+
+# Do a Tukey post-hoc test to see what is significant
+EMM1 <- emmeans(m, ~ Condition*Line, adjust="tukey", mode="linear.predictor", type="Score")
+pairs(EMM1)
+EMM2 <- emmeans(m, ~ Line, adjust="tukey", mode="linear.predictor", type="Score")
+pairs(EMM2)
+
+# Significant - let's make a plot
+ggplot(data_fecundity, aes(x=Condition, y=Total_Offspring, fill=Line))+
+  geom_boxplot(outlier.colour = "red")+
+  geom_jitter(color="black", size=0.8, alpha=0.9)+
+  xlab("Condition")+
+  ylab("Total Offspring")+
+  theme_bw()+
+  scale_fill_manual(breaks=c("AsymCx", "line12", "line50"),
+                    labels=c("AsymCx", "Line 12", "Line 50"),
+                    values=c("deeppink1","royalblue1","seagreen3"))+
+  scale_x_discrete(breaks=c("Control","Ethanol","Glyphosate","4nonyphenol"),
+                   limits=c("Control","Ethanol","Glyphosate","4nonyphenol"),
+                   labels=c("Control", "Ethanol", "Glyphosate", "4-Nonylphenol"))
+
+
+# ---------------------------------------------------
+# ---- Day of emergence analysis
+# ---------------------------------------------------
+
+# Remove NAs
+data_em <- data[complete.cases(data),]
+
+# NOTE: I no longer think the multinomial is the right way, we can discuss this at the lab meeting,
+# my current thought is to run a binomial per day and then correct for the number of days ran
+
+# Keep only relevant rows
+data_em <- data_em[,c(1:4)]
+
+# Change dataframe to have 1/0 for emerged per day
+binomial_emerged <- data_em %>% 
+  mutate(value = 1) %>%
+  pivot_wider(names_from = "Day_First_Emergence", values_from = value, values_fill = 0)
+
+# Run a binomial per day
+fit_12 = glm(`12` ~ Condition*Line,
+             family = binomial(link=logit), data=binomial_emerged)
+a=Anova(fit_12, type=3)
+
+fit_13 = glm(`13` ~ Condition+Line,
+             family = binomial(link=logit), data=binomial_emerged)
+b=Anova(fit_13, type=3)
+
+fit_14 = glm(`14` ~ Condition+Line,
+             family = binomial(link=logit), data=binomial_emerged)
+c=Anova(fit_14, type=3)
+
+fit_15 = glm(`15` ~ Condition+Line,
+             family = binomial(link=logit), data=binomial_emerged)
+d=Anova(fit_15, type=3)
+
+# Turn off scientific notation
+options(scipen=999)
+# Multiple testing correction
+p.adjust(c(a$`Pr(>Chisq)`, b$`Pr(>Chisq)`, c$`Pr(>Chisq)`
+           , d$`Pr(>Chisq)`), method="holm")
+# 0.59271210811204111 Day 12 Condition
+# 0.40440482731004046 Day 12 Line
+# 0.09563866995079624 Day 12 Interaction
+# 0.00343587654712312 Day 13 Condition *
+# 0.18350888646220548 Day 13 Line
+# 0.00000000000111535 Day 14 Condition *
+# 0.59271210811204111 Day 14 Line
+# 0.08165174771586965 Day 15 Condition
+# 0.15329999874183284 Day 15 Line
+
+# Do a Tukey post-hoc test to see what is significant (just for things that survived the multiple correction)
+EMM1 <- emmeans(fit_13, ~ Condition*Line, adjust="tukey", mode="linear.predictor", type="Score")
+pairs(EMM1)
+EMM1 <- emmeans(fit_14, ~ Condition*Line, adjust="tukey", mode="linear.predictor", type="Score")
+pairs(EMM1)
+
+# Make the graphs for each line *********
+# Graph - proportion
+ggplot(data_em, aes(x=Condition,  fill=Day_First_Emergence))+
+  geom_bar(position = "fill")+
+  facet_wrap(~ Line, labeller = labeller(Line = 
+                                           c("AsymCx" = "AsymCx",
+                                             "line12" = "Line 12",
+                                             "line50" = "Line 50")))+
+  xlab("Condition")+
+  ylab("Count")+
+  theme_bw()+
+  scale_x_discrete(breaks=c("Control","Ethanol","Glyphosate","4nonyphenol"),
+                   limits=c("Control","Ethanol","Glyphosate","4nonyphenol"),
+                   labels=c("Control", "Ethanol", "Glyphosate", "4-Nonylphenol"))+
+  scale_fill_discrete(name = "Day of Emergence")
+
+# Graph - count
+ggplot(data_em, aes(x=Condition, fill=Day_First_Emergence))+
+  geom_bar(stat = "count", position = "dodge")+
+  facet_wrap(~ Line, labeller = labeller(Line = 
+                                           c("AsymCx" = "AsymCx",
+                                             "line12" = "Line 12",
+                                             "line50" = "Line 50")))+
+  xlab("Condition")+
+  ylab("Count")+
+  theme_bw()+
+  scale_x_discrete(breaks=c("Control","Ethanol","Glyphosate","4nonyphenol"),
+                   limits=c("Control","Ethanol","Glyphosate","4nonyphenol"),
+                   labels=c("Control", "Ethanol", "Glyphosate", "4-Nonylphenol"))+
+  scale_fill_discrete(name = "Day of Emergence")
+
+# ---------------------------------------------------
+# ---- Emergence analysis
+# ---------------------------------------------------
+
+# Read in data again
+new_data <- read_excel("Nasonia_Offspring_Emergence_FINAL.xlsx")
+
+# Create binary response variable
+new_data$Emerged <- 1
+new_data$Emerged[new_data$Day_First_Emergence == "N/A"] <- 0
+
+# Ensure factors
+new_data$Condition <- as.factor(new_data$Condition)
+new_data$Line <- as.factor(new_data$Line)
+
+# General linear model with binomial distribution, interaction not significant
+fit = glm(Emerged ~ Condition+Line,
+          family = binomial(link=logit), data=new_data)
+Anova(fit, type=3)
+
+# Make percentages
+percentage_emr <- new_data %>% 
+  group_by(Condition, Line) %>%
+  summarise(
+    "Replicates" = n(),
+    "Num_Emr" = sum(Emerged == 1),
+    "Percentage_Emr" = 100*(Num_Emr / Replicates))
+
+# Graph
+ggplot(percentage_emr, aes(x = Condition, y = Percentage_Emr, fill = Line))+
+  geom_bar(stat="identity", position="dodge")+
+  ylab("Emerged (%)")+
+  theme_bw()+
+  scale_fill_manual(breaks=c("AsymCx", "line12", "line50"),
+                    labels=c("AsymCx", "Line 12", "Line 50"),
+                    values=c("deeppink1","royalblue1","seagreen3"))+
+  scale_x_discrete(breaks=c("Control","Ethanol","Glyphosate","4nonyphenol"),
+                   limits=c("Control","Ethanol","Glyphosate","4nonyphenol"),
+                   labels=c("Control", "Ethanol", "Glyphosate", "4-Nonylphenol"))
